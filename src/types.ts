@@ -41,6 +41,7 @@ export interface RoomState {
   lastActiveAt: number;
   locked: boolean;
   chatHistory?: ChatMessage[];
+  turnPlayerId?: string | null;
 }
 
 export type WinPatternType = 'Row' | 'Column' | 'Diagonal' | 'Four Corners' | 'X Pattern' | 'Full House';
@@ -70,6 +71,7 @@ export interface ClientToServerEvents {
   save_player_board: (data: { items: string[] }) => void;
   start_game: () => void;
   call_item: () => void;
+  select_number: (data: { number: string }) => void;
   mark_cell: (data: { index: number; isMarked: boolean }) => void;
   claim_bingo: () => void;
   kick_player: (data: { playerId: string }) => void;

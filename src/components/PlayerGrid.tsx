@@ -1,4 +1,4 @@
-import { Crown, ShieldAlert, Wifi, WifiOff, LogOut, Award } from 'lucide-react';
+import { Crown, ShieldAlert, Wifi, WifiOff, Award } from 'lucide-react';
 import { Player } from '../types';
 
 interface PlayerGridProps {
@@ -7,9 +7,49 @@ interface PlayerGridProps {
   currentPlayerId: string;
   onKickPlayer: (playerId: string) => void;
   winnerId: string | null;
+  gameStarted?: boolean;
 }
 
-export default function PlayerGrid({ players, hostId, currentPlayerId, onKickPlayer, winnerId }: PlayerGridProps) {
+function countCompletedLines(board: string[], markedIndices: number[]): number {
+  if (!board || board.length !== 25) return 0;
+  const marked = markedIndices || [];
+  let count = 0;
+
+  const linesToCheck = [
+    // Rows
+    [0, 1, 2, 3, 4],
+    [5, 6, 7, 8, 9],
+    [10, 11, 12, 13, 14],
+    [15, 16, 17, 18, 19],
+    [20, 21, 22, 23, 24],
+    // Columns
+    [0, 5, 10, 15, 20],
+    [1, 6, 11, 16, 21],
+    [2, 7, 12, 17, 22],
+    [3, 8, 13, 18, 23],
+    [4, 9, 14, 19, 24],
+    // Diagonals
+    [0, 6, 12, 18, 24],
+    [4, 8, 12, 16, 20]
+  ];
+
+  linesToCheck.forEach((line) => {
+    if (line.every((idx) => marked.includes(idx))) {
+      count++;
+    }
+  });
+
+  return count;
+}
+
+function getBingoProgressText(linesCount: number): string {
+  if (linesCount <= 0) return "-";
+  const chars = ["B", "I", "N", "G", "O"];
+  const count = Math.min(linesCount, 5);
+  return chars.slice(0, count).join("") + (linesCount >= 5 ? "!" : "");
+}
+
+export default function PlayerGrid({ players, hostId, currentPlayerId, onKickPlayer, winnerId, gameStarted }: PlayerGridProps) {
   const isHost = currentPlayerId === hostId;
   const playerList = Object.values(players);
   
@@ -20,16 +60,20 @@ export default function PlayerGrid({ players, hostId, currentPlayerId, onKickPla
     const isPlayerHost = player.id === hostId;
     const isMe = player.id === currentPlayerId;
     const isWinner = player.id === winnerId;
+    
+    // Calculate live line progress for active game
+    const completedLinesCount = countCompletedLines(player.board, player.markedIndices);
+    const progressText = getBingoProgressText(completedLinesCount);
 
     return (
       <div
         key={player.id}
         id={`player-card-${player.id}`}
-        className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+        className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-300 ${
           isWinner
-            ? 'bg-amber-500/10 border-amber-500 text-amber-900 dark:text-amber-100'
+            ? 'bg-amber-500/10 border-amber-500 text-amber-900 dark:text-amber-100 ring-2 ring-amber-500/20'
             : isMe
-            ? 'bg-indigo-500/5 border-indigo-500/20 text-zinc-900 dark:text-white'
+            ? 'bg-indigo-500/5 border-indigo-500/20 text-zinc-900 dark:text-white ring-1 ring-indigo-500/10'
             : 'bg-zinc-50/50 border-zinc-200/60 dark:bg-zinc-900/40 dark:border-zinc-800 text-zinc-800 dark:text-zinc-200'
         }`}
       >
@@ -55,11 +99,33 @@ export default function PlayerGrid({ players, hostId, currentPlayerId, onKickPla
               )}
             </div>
 
-            <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium">
-              {player.isSpectator ? 'Spectator' : 'Participant'} • {player.isConnected ? 'Connected' : 'Offline'}
+            <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-semibold uppercase tracking-wider flex items-center gap-1 mt-0.5">
+              <span>{player.isSpectator ? 'Spectator' : 'Player'}</span>
+              <span>•</span>
+              <span className={player.isConnected ? 'text-emerald-600 dark:text-emerald-400 font-bold' : ''}>
+                {player.isConnected ? 'Online' : 'Offline'}
+              </span>
             </div>
           </div>
         </div>
+
+        {/* Live Bingo Progress Display (B, BI, BIN, etc.) */}
+        {!player.isSpectator && gameStarted && (
+          <div className="text-right shrink-0">
+            <div className={`px-2.5 py-1 rounded-xl text-xs font-black select-none tracking-widest ${
+              completedLinesCount >= 5
+                ? 'bg-amber-500 text-white animate-bounce shadow-md shadow-amber-500/20'
+                : completedLinesCount > 0
+                ? 'bg-indigo-600 text-white font-black'
+                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
+            }`}>
+              {progressText}
+            </div>
+            <div className="text-[9px] text-zinc-400 dark:text-zinc-500 font-medium mt-0.5 select-none">
+              {completedLinesCount} {completedLinesCount === 1 ? 'line' : 'lines'}
+            </div>
+          </div>
+        )}
 
         {/* Kick player option (Only host can kick others) */}
         {isHost && !isPlayerHost && (
@@ -78,13 +144,13 @@ export default function PlayerGrid({ players, hostId, currentPlayerId, onKickPla
   };
 
   return (
-    <div id="player-grid" className="space-y-4">
+    <div id="player-grid" className="space-y-4 font-sans">
       {/* Participants list */}
       <div>
         <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2 flex items-center justify-between">
-          <span>Active Players</span>
+          <span>Active Players (2 max)</span>
           <span className="font-mono text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 px-1.5 py-0.5 rounded-md">
-            {participants.length}
+            {participants.length}/2
           </span>
         </h3>
         {participants.length === 0 ? (

@@ -471,6 +471,7 @@ export default function App() {
                     currentPlayerId={currentPlayerId || ''}
                     onKickPlayer={handleKickPlayer}
                     winnerId={roomState.winnerId}
+                    gameStarted={roomState.gameStarted}
                   />
                 </div>
               </div>
@@ -488,7 +489,7 @@ export default function App() {
                         Spectator Screen
                       </h3>
                       <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-md mt-1 mx-auto">
-                        You are spectating this match in real-time. Follow the drawn items on the right and check who claims Bingo!
+                        You are spectating this match in real-time. Follow the selected numbers on the right and check who completes 5 lines!
                       </p>
                     </div>
                   ) : (
@@ -496,35 +497,24 @@ export default function App() {
                       <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
                         <div>
                           <h3 className="font-extrabold text-base text-zinc-900 dark:text-white">
-                            Your Live Card
+                            Your Shuffled 1–25 Board
                           </h3>
                           <p className="text-[10px] text-zinc-400 dark:text-zinc-500 font-semibold uppercase tracking-wider">
-                            Tap called cells to daub
+                            Choose numbers on your turn to automatically mark them on both boards
                           </p>
                         </div>
-                        
-                        {roomState.gameStarted && !roomState.gameOver && (
-                          <motion.button
-                            id="claim-bingo-btn"
-                            whileHover={{ scale: 1.04 }}
-                            whileTap={{ scale: 0.96 }}
-                            onClick={handleClaimBingo}
-                            className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-extrabold rounded-xl shadow-lg shadow-indigo-600/20 text-xs tracking-wider uppercase cursor-pointer"
-                          >
-                            Claim Bingo!
-                          </motion.button>
-                        )}
                       </div>
 
                       <BingoBoard
                         board={myProfile?.board || []}
                         markedIndices={myProfile?.markedIndices || []}
                         calledItems={roomState.calledItems}
-                        freeSpaceEnabled={roomState.freeSpaceEnabled}
-                        onMarkCell={handleMarkCell}
                         isSpectator={isSpectator}
                         gameStarted={roomState.gameStarted}
                         gameOver={roomState.gameOver}
+                        isMyTurn={roomState.turnPlayerId === currentPlayerId}
+                        onSelectNumber={(num) => socket.emit('select_number', { number: num })}
+                        turnPlayerName={roomState.turnPlayerId ? (roomState.players[roomState.turnPlayerId]?.name || 'Opponent') : 'Opponent'}
                       />
                     </div>
                   )}
@@ -537,28 +527,17 @@ export default function App() {
                           Host Command Dashboard
                         </h3>
                         <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                          Draw custom items one by one. Or restart the match to play again.
+                          Start a fresh round with randomized boards for both players.
                         </p>
                       </div>
 
                       <div className="flex gap-2">
-                        {roomState.gameStarted && !roomState.gameOver && (
-                          <button
-                            id="draw-next-btn"
-                            onClick={handleCallItem}
-                            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shadow-md cursor-pointer flex items-center gap-1.5 transition-all"
-                          >
-                            <Volume2 className="w-4 h-4" />
-                            Draw Next Item
-                          </button>
-                        )}
-
                         <button
                           id="host-restart-btn"
                           onClick={handleStartGame}
-                          className="px-4 py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-bold rounded-lg cursor-pointer transition-all"
+                          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold rounded-xl shadow-lg shadow-indigo-600/10 cursor-pointer transition-all"
                         >
-                          Restart Game
+                          Restart Match
                         </button>
                       </div>
                     </div>
@@ -587,6 +566,7 @@ export default function App() {
                       currentPlayerId={currentPlayerId || ''}
                       onKickPlayer={handleKickPlayer}
                       winnerId={roomState.winnerId}
+                      gameStarted={roomState.gameStarted}
                     />
                   </div>
                 </div>

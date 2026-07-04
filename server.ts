@@ -96,56 +96,53 @@ const WINNING_PATTERNS: Record<WinPatternType, number[][]> = {
   ]
 };
 
-// Validate Bingo Claim server-side
-function validateBingo(room: RoomState, player: Player): WinDetails[] {
-  const board = player.board;
-  const marked = player.markedIndices;
-  const called = room.calledItems;
-  const freeSpace = room.freeSpaceEnabled;
-
-  // Find all validly marked indices (must be in player's marked list AND either free space or called by server)
-  const validMarkedIndices = new Set<number>();
-  
-  for (let i = 0; i < 25; i++) {
-    const isFree = i === 12 && freeSpace;
-    const item = board[i];
-    const isCalled = called.includes(item);
-    
-    // Player must have marked it, and it must be legally markable
-    if (marked.includes(i)) {
-      if (isFree || isCalled) {
-        validMarkedIndices.add(i);
-      }
-    }
+// Validate if board contains exactly numbers '1' through '25' exactly once
+function isValidBoard(board: string[]): boolean {
+  if (!board || board.length !== 25) return false;
+  const set = new Set(board.map((item) => item.trim()));
+  if (set.size !== 25) return false;
+  for (let i = 1; i <= 25; i++) {
+    if (!set.has(String(i))) return false;
   }
-
-  const matches: WinDetails[] = [];
-
-  // Check each pattern
-  (Object.keys(WINNING_PATTERNS) as WinPatternType[]).forEach((patternName) => {
-    const patternsList = WINNING_PATTERNS[patternName];
-    patternsList.forEach((indices) => {
-      const isWin = indices.every((idx) => validMarkedIndices.has(idx));
-      if (isWin) {
-        matches.push({
-          pattern: patternName,
-          indices: [...indices]
-        });
-      }
-    });
-  });
-
-  return matches;
+  return true;
 }
 
-// Default pre-configured 25 items for newly created rooms (non-tech, emoji-themed)
-const DEFAULT_ITEMS = [
-  '🎉 Party', '🚀 Rocket', '🍕 Pizza', '☕ Coffee', '🔥 Fire',
-  '📈 Chart Up', '🎯 Target', '🤖 Robot', '🎨 Paint', '🌟 Star',
-  '👾 Alien', '🍻 Beers', '🥑 Avocado', '💡 Idea', '🌈 Rainbow',
-  '🧩 Puzzle', '⚡ Lightning', '🔮 Crystal Ball', '👑 Crown', '🧠 Brain',
-  '🛠️ Tools', '🐱 Cat', '🎵 Music', '💸 Money', '🏆 Trophy'
-];
+// Count completed horizontal, vertical, and diagonal lines (classic 1-25 Bingo rules)
+function countCompletedLines(player: Player): { count: number; completedLines: number[][] } {
+  const marked = player.markedIndices || [];
+  let count = 0;
+  const completedLines: number[][] = [];
+
+  const linesToCheck = [
+    // Rows
+    [0, 1, 2, 3, 4],
+    [5, 6, 7, 8, 9],
+    [10, 11, 12, 13, 14],
+    [15, 16, 17, 18, 19],
+    [20, 21, 22, 23, 24],
+    // Columns
+    [0, 5, 10, 15, 20],
+    [1, 6, 11, 16, 21],
+    [2, 7, 12, 17, 22],
+    [3, 8, 13, 18, 23],
+    [4, 9, 14, 19, 24],
+    // Diagonals
+    [0, 6, 12, 18, 24],
+    [4, 8, 12, 16, 20]
+  ];
+
+  linesToCheck.forEach((line) => {
+    if (line.every((idx) => marked.includes(idx))) {
+      count++;
+      completedLines.push(line);
+    }
+  });
+
+  return { count, completedLines };
+}
+
+// Default pre-configured 25 items for newly created rooms (classic 1 to 25)
+const DEFAULT_ITEMS = Array.from({ length: 25 }, (_, i) => String(i + 1));
 
 // Touch room's active timestamp
 function touchRoom(roomCode: string) {
@@ -394,173 +391,150 @@ io.on('connection', (socket: Socket) => {
       return;
     }
 
+    const activePlayers = Object.values(room.players).filter((p) => !p.isSpectator && p.isConnected);
+    if (activePlayers.length !== 2) {
+      socket.emit('error_message', 'Exactly 2 active players are required to start a competitive Bingo match.');
+      return;
+    }
+
     room.gameStarted = true;
     room.gameOver = false;
     room.winnerId = null;
     room.winnerName = null;
     room.calledItems = [];
     room.calledItemsHistory = [];
-    room.locked = true; // Lock room from new participants
+    room.locked = true; // Lock room from new active participants
+    room.freeSpaceEnabled = false; // Turn-based classic 1-25 has no free spaces
 
-    // Ensure all players have a board. If not saved, generate a shuffled board from room.items
-    Object.values(room.players).forEach((player) => {
+    // Ensure all active players have a valid 1-25 board
+    activePlayers.forEach((player) => {
       player.markedIndices = [];
-      if (!player.isSpectator) {
-        if (!player.boardSaved || !player.board || player.board.length < 25) {
-          player.board = shuffle(room.items.length >= 25 ? room.items : DEFAULT_ITEMS);
-          player.boardSaved = true;
-        }
-        // If free space is enabled, pre-mark the center space index 12 automatically
-        if (room.freeSpaceEnabled) {
-          if (!player.markedIndices.includes(12)) {
-            player.markedIndices.push(12);
-          }
-        }
-      } else {
-        player.board = [];
+      if (!isValidBoard(player.board)) {
+        player.board = shuffle(DEFAULT_ITEMS);
+        player.boardSaved = true;
       }
     });
 
-    // Create the master items list from the union of all active players' boards
-    const allItems = new Set<string>();
-    Object.values(room.players).forEach((player) => {
-      if (!player.isSpectator && player.board && player.board.length === 25) {
-        player.board.forEach((item) => {
-          if (item && item.trim()) {
-            allItems.add(item.trim());
-          }
-        });
-      }
-    });
-
-    if (allItems.size >= 25) {
-      room.items = Array.from(allItems);
-    } else {
-      if (room.items.length < 25) {
-        room.items = [...DEFAULT_ITEMS];
-      }
-    }
+    // Randomly select which active player gets the first turn
+    const activeIds = activePlayers.map((p) => p.id);
+    room.turnPlayerId = activeIds[Math.floor(Math.random() * activeIds.length)];
 
     touchRoom(currentRoomCode);
 
-    // Countdown of 3 seconds before first draw
+    const firstTurnPlayerName = room.players[room.turnPlayerId]?.name || 'Unknown';
+    io.to(currentRoomCode).emit('notification', {
+      type: 'success',
+      message: `🎉 The Bingo match has started! First turn: ${firstTurnPlayerName}`
+    });
+
+    // Countdown of 3 seconds before starting
     io.to(currentRoomCode).emit('game_started', 3);
     
     // Immediate state sync
     io.to(currentRoomCode).emit('room_state', room);
     broadcastAvailableRooms();
-    console.log(`Game started in room ${currentRoomCode}`);
+    console.log(`Game started in room ${currentRoomCode}. First turn: ${room.turnPlayerId}`);
   });
 
-  socket.on('call_item', () => {
+  socket.on('select_number', ({ number }: { number: string }) => {
     if (!currentRoomCode || !currentPlayerId) return;
     const room = rooms[currentRoomCode];
     if (!room) return;
-
-    if (room.hostId !== currentPlayerId) {
-      socket.emit('error_message', 'Only the host can call items');
-      return;
-    }
 
     if (!room.gameStarted || room.gameOver) {
-      socket.emit('error_message', 'Game is not active');
+      socket.emit('error_message', 'The game is not active!');
       return;
     }
 
-    // Find items not yet called
-    const remainingItems = room.items.filter((item) => !room.calledItems.includes(item));
-    if (remainingItems.length === 0) {
-      socket.emit('error_message', 'All items have been called!');
+    if (room.turnPlayerId !== currentPlayerId) {
+      socket.emit('error_message', 'It is not your turn!');
       return;
     }
 
-    const nextItem = remainingItems[Math.floor(Math.random() * remainingItems.length)];
-    room.calledItems.push(nextItem);
-    
-    const historyItem = { item: nextItem, calledAt: Date.now() };
-    room.calledItemsHistory.unshift(historyItem); // Latest first
+    const trimmedNum = number.trim();
+    if (!trimmedNum) return;
 
-    touchRoom(currentRoomCode);
+    // Check if the number was already selected
+    if (room.calledItems.includes(trimmedNum)) {
+      socket.emit('error_message', 'This number has already been marked.');
+      return;
+    }
 
-    io.to(currentRoomCode).emit('item_called', nextItem, room.calledItemsHistory);
-    io.to(currentRoomCode).emit('room_state', room);
-    console.log(`Item called in room ${currentRoomCode}: ${nextItem}`);
-  });
+    const numVal = parseInt(trimmedNum, 10);
+    if (isNaN(numVal) || numVal < 1 || numVal > 25) {
+      socket.emit('error_message', 'Only numbers 1 to 25 can be selected.');
+      return;
+    }
 
-  socket.on('mark_cell', ({ index, isMarked }: { index: number; isMarked: boolean }) => {
-    if (!currentRoomCode || !currentPlayerId) return;
-    const room = rooms[currentRoomCode];
-    if (!room) return;
+    // Register selection on the server
+    room.calledItems.push(trimmedNum);
+    room.calledItemsHistory.unshift({ item: trimmedNum, calledAt: Date.now() });
 
-    const player = room.players[currentPlayerId];
-    if (!player || player.isSpectator) return;
-
-    // Check center free space constraint
-    if (index === 12 && room.freeSpaceEnabled) {
-      // Free space is always marked, ignore client-side toggles
-      if (!player.markedIndices.includes(12)) {
-        player.markedIndices.push(12);
+    // Automatically mark this number on BOTH players' boards (server-authoritative)
+    const activePlayers = Object.values(room.players).filter((p) => !p.isSpectator && p.isConnected);
+    activePlayers.forEach((player) => {
+      const idx = player.board.indexOf(trimmedNum);
+      if (idx !== -1 && !player.markedIndices.includes(idx)) {
+        player.markedIndices.push(idx);
       }
-    } else {
-      // Validate that the item at index has actually been called before allowing marking
-      const itemText = player.board[index];
-      const isCalled = room.calledItems.includes(itemText);
+    });
 
-      // We allow marking called items only
-      if (isMarked) {
-        if (isCalled && !player.markedIndices.includes(index)) {
-          player.markedIndices.push(index);
-        }
-      } else {
-        player.markedIndices = player.markedIndices.filter((idx) => idx !== index);
+    // Switch turn to the other active player
+    const otherPlayer = activePlayers.find((p) => p.id !== currentPlayerId);
+    if (otherPlayer) {
+      room.turnPlayerId = otherPlayer.id;
+    }
+
+    // Automatically count lines and check for winners after this move
+    if (activePlayers.length === 2) {
+      const p1 = activePlayers[0];
+      const p2 = activePlayers[1];
+
+      const score1 = countCompletedLines(p1).count;
+      const score2 = countCompletedLines(p2).count;
+
+      if (score1 >= 5 && score2 >= 5) {
+        // Double winner = DRAW
+        room.gameOver = true;
+        room.gameStarted = false;
+        room.winnerId = 'draw';
+        room.winnerName = 'Draw Match';
+        io.to(currentRoomCode).emit('notification', {
+          type: 'warning',
+          message: `It is a Draw! Both ${p1.name} and ${p2.name} completed 5 or more lines simultaneously!`
+        });
+      } else if (score1 >= 5) {
+        // Player 1 wins
+        room.gameOver = true;
+        room.gameStarted = false;
+        room.winnerId = p1.id;
+        room.winnerName = p1.name;
+        io.to(currentRoomCode).emit('notification', {
+          type: 'success',
+          message: `🎉 BINGO! ${p1.name} completed ${score1} lines and won the match!`
+        });
+      } else if (score2 >= 5) {
+        // Player 2 wins
+        room.gameOver = true;
+        room.gameStarted = false;
+        room.winnerId = p2.id;
+        room.winnerName = p2.name;
+        io.to(currentRoomCode).emit('notification', {
+          type: 'success',
+          message: `🎉 BINGO! ${p2.name} completed ${score2} lines and won the match!`
+        });
       }
     }
 
     touchRoom(currentRoomCode);
     io.to(currentRoomCode).emit('room_state', room);
+    console.log(`Number ${trimmedNum} selected in room ${currentRoomCode} by ${room.players[currentPlayerId]?.name}`);
   });
 
-  socket.on('claim_bingo', () => {
-    if (!currentRoomCode || !currentPlayerId) return;
-    const room = rooms[currentRoomCode];
-    if (!room) return;
-
-    const player = room.players[currentPlayerId];
-    if (!player || player.isSpectator || !room.gameStarted || room.gameOver) return;
-
-    // Run authoritative server-side validation
-    const winningPatterns = validateBingo(room, player);
-
-    if (winningPatterns.length > 0) {
-      // Player won!
-      room.gameOver = true;
-      room.gameStarted = false;
-      room.winnerId = player.id;
-      room.winnerName = player.name;
-
-      touchRoom(currentRoomCode);
-
-      io.to(currentRoomCode).emit('bingo_claimed', {
-        playerId: player.id,
-        playerName: player.name,
-        patterns: winningPatterns
-      });
-      io.to(currentRoomCode).emit('room_state', room);
-      broadcastAvailableRooms();
-      console.log(`BINGO CLAIM CONFIRMED for ${player.name} in room ${currentRoomCode}`);
-    } else {
-      // Reject claim
-      socket.emit('bingo_rejected', {
-        playerId: player.id,
-        reason: 'Your marked tiles do not complete a winning combination, or some marked tiles have not been called yet!'
-      });
-      socket.emit('notification', {
-        type: 'error',
-        message: 'Bingo claim rejected: Check your board, you must complete a full line/pattern of CALLED cells!'
-      });
-      console.log(`BINGO CLAIM REJECTED for ${player.name} in room ${currentRoomCode}`);
-    }
-  });
+  // Keep obsolete listeners as empty stubs so clients don't crash
+  socket.on('call_item', () => {});
+  socket.on('mark_cell', () => {});
+  socket.on('claim_bingo', () => {});
 
   socket.on('kick_player', ({ playerId }: { playerId: string }) => {
     if (!currentRoomCode || !currentPlayerId) return;
