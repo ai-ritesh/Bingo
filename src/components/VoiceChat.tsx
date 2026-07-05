@@ -24,11 +24,17 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [volumeMultiplier, setVolumeMultiplier] = useState<number>(3.0); // Default to 3x (300%) volume boost
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const pcsRef = useRef<Record<string, RTCPeerConnection>>({});
   const audioElementsRef = useRef<Record<string, HTMLAudioElement>>({});
   
+  // Web Audio API refs for volume boosting
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const gainNodesRef = useRef<Record<string, GainNode>>({});
+  const sourcesRef = useRef<Record<string, MediaStreamAudioSourceNode>>({});
+
   // Track voice state changes from room state
   const myProfile = roomState.players[currentPlayerId];
   const voicePlayers = Object.values(roomState.players).filter(p => p.isConnected && p.isVoiceJoined);
@@ -57,6 +63,18 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
       audioElementsRef.current[playerId].remove();
       delete audioElementsRef.current[playerId];
     }
+    if (sourcesRef.current[playerId]) {
+      try {
+        sourcesRef.current[playerId].disconnect();
+      } catch (e) {}
+      delete sourcesRef.current[playerId];
+    }
+    if (gainNodesRef.current[playerId]) {
+      try {
+        gainNodesRef.current[playerId].disconnect();
+      } catch (e) {}
+      delete gainNodesRef.current[playerId];
+    }
   };
 
   // Teardown everything
@@ -80,25 +98,71 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
     setIsJoined(false);
   };
 
-  // Play remote audio stream safely
+  // Play remote audio stream safely with Web Audio volume booster
   const playAudio = (playerId: string, stream: MediaStream) => {
+    // Lazy-initialize audio context
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    const audioCtx = audioContextRef.current;
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(console.error);
+    }
+
     // Check if audio element already exists, if not create one
     let audio = audioElementsRef.current[playerId];
     if (!audio) {
       audio = document.createElement('audio');
       audio.id = `remote-audio-${playerId}`;
       audio.autoplay = true;
-      audio.muted = isDeafened; // respect local deafen state
+      audio.muted = true; // MUST be muted so we don't hear double audio (the unboosted HTMLAudioElement audio)
       document.body.appendChild(audio);
       audioElementsRef.current[playerId] = audio;
     }
     audio.srcObject = stream;
     
-    // Play with error handling
+    // Play with error handling (muted so silent)
     audio.play().catch(err => {
       console.warn('Audio play request failed (likely pending user interaction):', err);
     });
+
+    // Tear down any pre-existing Web Audio nodes for this player
+    if (sourcesRef.current[playerId]) {
+      try { sourcesRef.current[playerId].disconnect(); } catch (e) {}
+    }
+    if (gainNodesRef.current[playerId]) {
+      try { gainNodesRef.current[playerId].disconnect(); } catch (e) {}
+    }
+
+    // Route stream through GainNode
+    try {
+      const source = audioCtx.createMediaStreamSource(stream);
+      const gainNode = audioCtx.createGain();
+      
+      // Apply volume boost multiplier (mute if locally deafened)
+      const initialGain = isDeafened ? 0 : volumeMultiplier;
+      gainNode.gain.setValueAtTime(initialGain, audioCtx.currentTime);
+      
+      source.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      
+      sourcesRef.current[playerId] = source;
+      gainNodesRef.current[playerId] = gainNode;
+    } catch (e) {
+      console.error('Failed to setup Web Audio API gain pipeline:', e);
+    }
   };
+
+  // Synchronize gain values in real-time when volume multiplier or deafened state changes
+  useEffect(() => {
+    Object.keys(gainNodesRef.current).forEach(playerId => {
+      const gainNode = gainNodesRef.current[playerId];
+      if (gainNode && audioContextRef.current) {
+        const targetGain = isDeafened ? 0 : volumeMultiplier;
+        gainNode.gain.setValueAtTime(targetGain, audioContextRef.current.currentTime);
+      }
+    });
+  }, [volumeMultiplier, isDeafened]);
 
   // Handle WebRTC Peer Connection instantiation
   const initiatePeerConnection = async (targetPlayerId: string, initiateOffer: boolean) => {
@@ -226,10 +290,10 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
     const nextDeafened = !isDeafened;
     setIsDeafened(nextDeafened);
 
-    // Mute all remote playbacks locally
+    // Mute all remote playbacks locally (legacy, keep for safety)
     Object.values(audioElementsRef.current).forEach(audio => {
       if (audio) {
-        (audio as HTMLAudioElement).muted = nextDeafened;
+        (audio as HTMLAudioElement).muted = true;
       }
     });
 
@@ -342,6 +406,11 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
       }
       // Close connections
       Object.keys(pcsRef.current).forEach(closeConnection);
+
+      // Close AudioContext
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(console.error);
+      }
     };
   }, []);
 
@@ -403,6 +472,30 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
       {permissionError && (
         <div className="text-xs text-rose-600 dark:text-rose-400 font-semibold bg-rose-500/5 p-2 rounded-xl border border-rose-500/10">
           {permissionError}
+        </div>
+      )}
+
+      {/* Dynamic Voice Sound Boost Controls */}
+      {isJoined && (
+        <div className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-950 p-2 rounded-xl border border-zinc-200/80 dark:border-zinc-800">
+          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1">
+            <Volume1 className="w-3.5 h-3.5 text-indigo-500" /> Voice Boost:
+          </span>
+          <div className="flex gap-1">
+            {[1.0, 2.0, 3.0, 4.0].map((v) => (
+              <button
+                key={v}
+                onClick={() => setVolumeMultiplier(v)}
+                className={`text-[10px] font-black px-2 py-1 rounded cursor-pointer transition-all ${
+                  volumeMultiplier === v
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                }`}
+              >
+                {v === 1.0 ? 'Off' : `${v}x`}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

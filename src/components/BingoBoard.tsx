@@ -12,6 +12,13 @@ interface BingoBoardProps {
   turnPlayerName?: string;
 }
 
+interface CompletedLine {
+  id: string;
+  type: 'row' | 'col' | 'diag';
+  index: number;
+  completionIndex: number;
+}
+
 export default function BingoBoard({
   board,
   markedIndices,
@@ -50,6 +57,62 @@ export default function BingoBoard({
     ? ['A', 'B', 'C', 'D', 'E', 'F', 'G']
     : ['B', 'I', 'N', 'G', 'O'];
 
+  // Dynamically compute completed rows, columns, and diagonals sorted chronologically
+  const getCompletedLinesList = (): CompletedLine[] => {
+    if (!board || (board.length !== 25 && board.length !== 49)) return [];
+    const boardSize = board.length === 49 ? 7 : 5;
+    const completedList: CompletedLine[] = [];
+
+    // Rows
+    for (let r = 0; r < boardSize; r++) {
+      const rowIndices: number[] = [];
+      for (let c = 0; c < boardSize; c++) {
+        rowIndices.push(r * boardSize + c);
+      }
+      if (rowIndices.every(idx => markedIndices.includes(idx))) {
+        const completionIndex = Math.max(...rowIndices.map(idx => markedIndices.indexOf(idx)));
+        completedList.push({ id: `row-${r}`, type: 'row', index: r, completionIndex });
+      }
+    }
+
+    // Columns
+    for (let c = 0; c < boardSize; c++) {
+      const colIndices: number[] = [];
+      for (let r = 0; r < boardSize; r++) {
+        colIndices.push(r * boardSize + c);
+      }
+      if (colIndices.every(idx => markedIndices.includes(idx))) {
+        const completionIndex = Math.max(...colIndices.map(idx => markedIndices.indexOf(idx)));
+        completedList.push({ id: `col-${c}`, type: 'col', index: c, completionIndex });
+      }
+    }
+
+    // Main Diagonal (top-left to bottom-right)
+    const diag1Indices: number[] = [];
+    for (let i = 0; i < boardSize; i++) {
+      diag1Indices.push(i * boardSize + i);
+    }
+    if (diag1Indices.every(idx => markedIndices.includes(idx))) {
+      const completionIndex = Math.max(...diag1Indices.map(idx => markedIndices.indexOf(idx)));
+      completedList.push({ id: 'diag-0', type: 'diag', index: 0, completionIndex });
+    }
+
+    // Anti Diagonal (top-right to bottom-left)
+    const diag2Indices: number[] = [];
+    for (let i = 0; i < boardSize; i++) {
+      diag2Indices.push(i * boardSize + (boardSize - 1 - i));
+    }
+    if (diag2Indices.every(idx => markedIndices.includes(idx))) {
+      const completionIndex = Math.max(...diag2Indices.map(idx => markedIndices.indexOf(idx)));
+      completedList.push({ id: 'diag-1', type: 'diag', index: 1, completionIndex });
+    }
+
+    // Sort chronologically by their final mark step index
+    return completedList.sort((a, b) => a.completionIndex - b.completionIndex);
+  };
+
+  const completedLines = getCompletedLinesList();
+
   return (
     <div id="bingo-board-wrapper" className="w-full max-w-lg mx-auto space-y-4 font-sans">
       {/* Letters Header */}
@@ -68,7 +131,7 @@ export default function BingoBoard({
 
       {/* Dynamic Board Grid */}
       <div className="bg-zinc-50 dark:bg-zinc-950 p-2.5 sm:p-4 rounded-3xl border border-zinc-200/80 dark:border-zinc-800/80 shadow-2xl aspect-square w-full">
-        <div className={`grid gap-2 h-full w-full ${
+        <div className={`grid gap-2 h-full w-full relative ${
           board.length === 49 ? 'grid-cols-7' : 'grid-cols-5'
         }`}>
           {board.map((item, idx) => {
@@ -115,6 +178,134 @@ export default function BingoBoard({
               </motion.button>
             );
           })}
+
+          {/* Visual Completed Lines Overlay */}
+          {completedLines.length > 0 && (
+            <svg className="absolute inset-0 w-full h-full pointer-events-none z-20" viewBox="0 0 100 100">
+              <defs>
+                <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="1.5" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+                <linearGradient id="line-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#6366f1" />
+                  <stop offset="50%" stopColor="#ec4899" />
+                  <stop offset="100%" stopColor="#f59e0b" />
+                </linearGradient>
+              </defs>
+              {completedLines.map((line, orderIdx) => {
+                let x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+                let labelX = 50, labelY = 50;
+                const boardSize = board.length === 49 ? 7 : 5;
+
+                if (line.type === 'row') {
+                  const y = ((line.index + 0.5) / boardSize) * 100;
+                  x1 = 4;
+                  y1 = y;
+                  x2 = 96;
+                  y2 = y;
+                  labelX = 50;
+                  labelY = y;
+                } else if (line.type === 'col') {
+                  const x = ((line.index + 0.5) / boardSize) * 100;
+                  x1 = x;
+                  y1 = 4;
+                  x2 = x;
+                  y2 = 96;
+                  labelX = x;
+                  labelY = line.index % 2 === 0 ? 32 : 68;
+                } else if (line.type === 'diag') {
+                  if (line.index === 0) {
+                    x1 = 6;
+                    y1 = 6;
+                    x2 = 94;
+                    y2 = 94;
+                    labelX = 22;
+                    labelY = 22;
+                  } else {
+                    x1 = 94;
+                    y1 = 6;
+                    x2 = 6;
+                    y2 = 94;
+                    labelX = 78;
+                    labelY = 22;
+                  }
+                }
+
+                const ordinals = ["1st Line", "2nd Line", "3rd Line", "4th Line", "5th Line", "6th Line", "7th Line", "8th Line", "9th Line", "10th Line", "11th Line", "12th Line", "13th Line", "14th Line", "15th Line", "16th Line"];
+                const labelText = ordinals[orderIdx] || `${orderIdx + 1}th Line`;
+
+                return (
+                  <g key={line.id}>
+                    {/* Glowing neon background line */}
+                    <line
+                      x1={x1}
+                      y1={y1}
+                      x2={x2}
+                      y2={y2}
+                      stroke="url(#line-grad)"
+                      strokeWidth="3.2"
+                      strokeLinecap="round"
+                      opacity="0.85"
+                      filter="url(#glow)"
+                    />
+                    
+                    {/* Core bright white line inside the glow */}
+                    <line
+                      x1={x1}
+                      y1={y1}
+                      x2={x2}
+                      y2={y2}
+                      stroke="#ffffff"
+                      strokeWidth="1.0"
+                      strokeLinecap="round"
+                      opacity="1"
+                    />
+
+                    {/* Pill label group */}
+                    <g transform={`translate(${labelX}, ${labelY})`}>
+                      <rect
+                        x="-13"
+                        y="-4.5"
+                        width="26"
+                        height="9"
+                        rx="4.5"
+                        ry="4.5"
+                        fill="#09090b"
+                        stroke="url(#line-grad)"
+                        strokeWidth="1.2"
+                        filter="url(#glow)"
+                      />
+                      <rect
+                        x="-13"
+                        y="-4.5"
+                        width="26"
+                        height="9"
+                        rx="4.5"
+                        ry="4.5"
+                        fill="#18181b"
+                        stroke="#ffffff"
+                        strokeWidth="0.6"
+                      />
+                      <text
+                        fill="#ffffff"
+                        fontSize="3.8"
+                        fontWeight="900"
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        className="font-mono tracking-wider font-black"
+                      >
+                        {labelText.toUpperCase()}
+                      </text>
+                    </g>
+                  </g>
+                );
+              })}
+            </svg>
+          )}
         </div>
       </div>
 
