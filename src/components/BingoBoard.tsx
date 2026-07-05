@@ -52,9 +52,9 @@ export default function BingoBoard({
     onSelectNumber(num);
   };
 
-  // Grid Header columns (B I N G O or alphabetical grid header)
+  // Grid Header columns (B I N G O or custom grid header)
   const headerLetters = board.length === 49 
-    ? ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+    ? ['I', 'L', 'O', 'V', 'E', 'U', '💓']
     : ['B', 'I', 'N', 'G', 'O'];
 
   // Dynamically compute completed rows, columns, and diagonals sorted chronologically

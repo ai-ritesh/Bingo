@@ -34,6 +34,7 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
   const audioContextRef = useRef<AudioContext | null>(null);
   const gainNodesRef = useRef<Record<string, GainNode>>({});
   const sourcesRef = useRef<Record<string, MediaStreamAudioSourceNode>>({});
+  const iceCandidatesQueueRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
 
   // Track voice state changes from room state
   const myProfile = roomState.players[currentPlayerId];
@@ -100,31 +101,34 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
 
   // Play remote audio stream safely with Web Audio volume booster
   const playAudio = (playerId: string, stream: MediaStream) => {
-    // Lazy-initialize audio context
-    if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    const audioCtx = audioContextRef.current;
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume().catch(console.error);
-    }
-
     // Check if audio element already exists, if not create one
     let audio = audioElementsRef.current[playerId];
     if (!audio) {
       audio = document.createElement('audio');
       audio.id = `remote-audio-${playerId}`;
       audio.autoplay = true;
-      audio.muted = true; // MUST be muted so we don't hear double audio (the unboosted HTMLAudioElement audio)
       document.body.appendChild(audio);
       audioElementsRef.current[playerId] = audio;
     }
     audio.srcObject = stream;
-    
-    // Play with error handling (muted so silent)
+
+    // Apply native audio properties based on volume booster state
+    if (volumeMultiplier === 1.0) {
+      audio.muted = isDeafened;
+    } else {
+      audio.muted = true; // Mute element to route through GainNode instead
+    }
+
+    // Play with error handling
     audio.play().catch(err => {
-      console.warn('Audio play request failed (likely pending user interaction):', err);
+      console.warn('Audio play request failed:', err);
     });
+
+    // Lazy-initialize audio context for boosted volume modes
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    const audioCtx = audioContextRef.current;
 
     // Tear down any pre-existing Web Audio nodes for this player
     if (sourcesRef.current[playerId]) {
@@ -134,14 +138,14 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
       try { gainNodesRef.current[playerId].disconnect(); } catch (e) {}
     }
 
-    // Route stream through GainNode
+    // Route stream through GainNode for boosting
     try {
       const source = audioCtx.createMediaStreamSource(stream);
       const gainNode = audioCtx.createGain();
       
-      // Apply volume boost multiplier (mute if locally deafened)
-      const initialGain = isDeafened ? 0 : volumeMultiplier;
-      gainNode.gain.setValueAtTime(initialGain, audioCtx.currentTime);
+      // If 1x (no boost), Web Audio gain is 0 (since native audio plays unmuted). Otherwise, set to volumeMultiplier.
+      const targetGain = (volumeMultiplier === 1.0 || isDeafened) ? 0 : volumeMultiplier;
+      gainNode.gain.setValueAtTime(targetGain, audioCtx.currentTime);
       
       source.connect(gainNode);
       gainNode.connect(audioCtx.destination);
@@ -153,12 +157,23 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
     }
   };
 
-  // Synchronize gain values in real-time when volume multiplier or deafened state changes
+  // Synchronize gain values and native muted state in real-time when volume multiplier or deafened state changes
   useEffect(() => {
+    Object.keys(audioElementsRef.current).forEach(playerId => {
+      const audio = audioElementsRef.current[playerId];
+      if (audio) {
+        if (volumeMultiplier === 1.0) {
+          audio.muted = isDeafened;
+        } else {
+          audio.muted = true;
+        }
+      }
+    });
+
     Object.keys(gainNodesRef.current).forEach(playerId => {
       const gainNode = gainNodesRef.current[playerId];
       if (gainNode && audioContextRef.current) {
-        const targetGain = isDeafened ? 0 : volumeMultiplier;
+        const targetGain = (volumeMultiplier === 1.0 || isDeafened) ? 0 : volumeMultiplier;
         gainNode.gain.setValueAtTime(targetGain, audioContextRef.current.currentTime);
       }
     });
@@ -243,6 +258,15 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
   // Join Voice Channel
   const joinVoiceChannel = async () => {
     setPermissionError(null);
+
+    // Explicitly initialize/resume AudioContext inside user gesture handler to bypass browser autoplay rules
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume().catch(console.error);
+    }
+
     try {
       // 1. Ask for mic permission
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -275,6 +299,10 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
 
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume().catch(console.error);
+    }
+
     // Toggle local audio track
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach(track => {
@@ -289,6 +317,10 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
   const handleToggleDeafen = () => {
     const nextDeafened = !isDeafened;
     setIsDeafened(nextDeafened);
+
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume().catch(console.error);
+    }
 
     // Mute all remote playbacks locally (legacy, keep for safety)
     Object.values(audioElementsRef.current).forEach(audio => {
@@ -313,6 +345,16 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
     });
   };
 
+  const handleVolumeBoostChange = (v: number) => {
+    setVolumeMultiplier(v);
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume().catch(console.error);
+    }
+  };
+
   // Handle incoming RTC signals (SDP Offer/Answer & ICE Candidates)
   useEffect(() => {
     const handleRtcSignal = async ({ senderId, signal }: { senderId: string; signal: any }) => {
@@ -334,6 +376,20 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
               sdp: signal.sdp
             }));
 
+            // Drain queued candidates now that remote description is set
+            const queue = iceCandidatesQueueRef.current[senderId];
+            if (queue && queue.length > 0) {
+              console.log(`[WebRTC] Draining ${queue.length} queued ICE candidates for ${senderId}`);
+              for (const candidate of queue) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (e) {
+                  console.error('Error adding queued candidate:', e);
+                }
+              }
+              iceCandidatesQueueRef.current[senderId] = [];
+            }
+
             // Create and send SDP Answer
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
@@ -352,11 +408,30 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
               type: 'answer',
               sdp: signal.sdp
             }));
+
+            // Drain queued candidates now that remote description is set
+            const queue = iceCandidatesQueueRef.current[senderId];
+            if (queue && queue.length > 0) {
+              console.log(`[WebRTC] Draining ${queue.length} queued ICE candidates for ${senderId}`);
+              for (const candidate of queue) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (e) {
+                  console.error('Error adding queued candidate:', e);
+                }
+              }
+              iceCandidatesQueueRef.current[senderId] = [];
+            }
           }
         } else if (signal.type === 'candidate') {
           // Received ICE Candidate: add candidate
-          if (pc) {
+          if (pc && pc.remoteDescription) {
             await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          } else {
+            if (!iceCandidatesQueueRef.current[senderId]) {
+              iceCandidatesQueueRef.current[senderId] = [];
+            }
+            iceCandidatesQueueRef.current[senderId].push(signal.candidate);
           }
         }
       } catch (err) {
@@ -485,7 +560,7 @@ export default function VoiceChat({ socket, roomState, currentPlayerId }: VoiceC
             {[1.0, 2.0, 3.0, 4.0].map((v) => (
               <button
                 key={v}
-                onClick={() => setVolumeMultiplier(v)}
+                onClick={() => handleVolumeBoostChange(v)}
                 className={`text-[10px] font-black px-2 py-1 rounded cursor-pointer transition-all ${
                   volumeMultiplier === v
                     ? 'bg-indigo-600 text-white'

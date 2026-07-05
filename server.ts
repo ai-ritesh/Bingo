@@ -543,10 +543,12 @@ io.on('connection', (socket: Socket) => {
       const p1 = activePlayers[0];
       const p2 = activePlayers[1];
 
+      const targetLines = p1.board.length === 49 ? 7 : 5;
+
       const score1 = countCompletedLines(p1).count;
       const score2 = countCompletedLines(p2).count;
 
-      if (score1 >= 5 && score2 >= 5) {
+      if (score1 >= targetLines && score2 >= targetLines) {
         // Double winner = whoever selected the number first (the active player) wins!
         const winner = p1.id === currentPlayerId ? p1 : p2;
         const winningScore = p1.id === currentPlayerId ? score1 : score2;
@@ -558,7 +560,7 @@ io.on('connection', (socket: Socket) => {
           type: 'success',
           message: `🎉 BINGO! ${winner.name} chose the final number first, completed ${winningScore} lines and won the match!`
         });
-      } else if (score1 >= 5) {
+      } else if (score1 >= targetLines) {
         // Player 1 wins
         room.gameOver = true;
         room.gameStarted = false;
@@ -568,7 +570,7 @@ io.on('connection', (socket: Socket) => {
           type: 'success',
           message: `🎉 BINGO! ${p1.name} completed ${score1} lines and won the match!`
         });
-      } else if (score2 >= 5) {
+      } else if (score2 >= targetLines) {
         // Player 2 wins
         room.gameOver = true;
         room.gameStarted = false;

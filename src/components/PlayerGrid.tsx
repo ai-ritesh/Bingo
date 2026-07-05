@@ -59,11 +59,15 @@ function countCompletedLines(board: string[], markedIndices: number[]): number {
   return count;
 }
 
-function getBingoProgressText(linesCount: number): string {
+function getBingoProgressText(linesCount: number, boardLength: number): string {
   if (linesCount <= 0) return "-";
-  const chars = ["B", "I", "N", "G", "O"];
-  const count = Math.min(linesCount, 5);
-  return chars.slice(0, count).join("") + (linesCount >= 5 ? "!" : "");
+  const isLarge = boardLength === 49;
+  const chars = isLarge
+    ? ["I", "L", "O", "V", "E", "U", "💓"]
+    : ["B", "I", "N", "G", "O"];
+  const target = isLarge ? 7 : 5;
+  const count = Math.min(linesCount, target);
+  return chars.slice(0, count).join("") + (linesCount >= target ? "!" : "");
 }
 
 export default function PlayerGrid({ players, hostId, currentPlayerId, onKickPlayer, winnerId, gameStarted }: PlayerGridProps) {
@@ -80,7 +84,8 @@ export default function PlayerGrid({ players, hostId, currentPlayerId, onKickPla
     
     // Calculate live line progress for active game
     const completedLinesCount = countCompletedLines(player.board, player.markedIndices);
-    const progressText = getBingoProgressText(completedLinesCount);
+    const progressText = getBingoProgressText(completedLinesCount, player.board.length);
+    const targetLines = player.board.length === 49 ? 7 : 5;
 
     return (
       <div
@@ -126,11 +131,11 @@ export default function PlayerGrid({ players, hostId, currentPlayerId, onKickPla
           </div>
         </div>
 
-        {/* Live Bingo Progress Display (B, BI, BIN, etc.) */}
+        {/* Live Bingo Progress Display */}
         {!player.isSpectator && gameStarted && (
           <div className="text-right shrink-0">
             <div className={`px-2.5 py-1 rounded-xl text-xs font-black select-none tracking-widest ${
-              completedLinesCount >= 5
+              completedLinesCount >= targetLines
                 ? 'bg-amber-500 text-white animate-bounce shadow-md shadow-amber-500/20'
                 : completedLinesCount > 0
                 ? 'bg-indigo-600 text-white font-black'
