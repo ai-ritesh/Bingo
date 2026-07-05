@@ -547,14 +547,16 @@ io.on('connection', (socket: Socket) => {
       const score2 = countCompletedLines(p2).count;
 
       if (score1 >= 5 && score2 >= 5) {
-        // Double winner = DRAW
+        // Double winner = whoever selected the number first (the active player) wins!
+        const winner = p1.id === currentPlayerId ? p1 : p2;
+        const winningScore = p1.id === currentPlayerId ? score1 : score2;
         room.gameOver = true;
         room.gameStarted = false;
-        room.winnerId = 'draw';
-        room.winnerName = 'Draw Match';
+        room.winnerId = winner.id;
+        room.winnerName = winner.name;
         io.to(currentRoomCode).emit('notification', {
-          type: 'warning',
-          message: `It is a Draw! Both ${p1.name} and ${p2.name} completed 5 or more lines simultaneously!`
+          type: 'success',
+          message: `🎉 BINGO! ${winner.name} chose the final number first, completed ${winningScore} lines and won the match!`
         });
       } else if (score1 >= 5) {
         // Player 1 wins

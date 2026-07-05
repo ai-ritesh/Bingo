@@ -119,14 +119,38 @@ export default function BingoBoard({
       <div className={`grid gap-2 text-center select-none px-2 ${
         board.length === 49 ? 'grid-cols-7' : 'grid-cols-5'
       }`}>
-        {headerLetters.map((char, index) => (
-          <div
-            key={index}
-            className="text-xl sm:text-2xl font-extrabold tracking-wider bg-gradient-to-b from-indigo-500 to-purple-600 bg-clip-text text-transparent"
-          >
-            {char}
-          </div>
-        ))}
+        {headerLetters.map((char, index) => {
+          const isCrossed = completedLines.length > index;
+          return (
+            <div
+              key={index}
+              className={`relative flex items-center justify-center p-1 sm:p-2 rounded-xl border transition-all duration-300 ${
+                isCrossed 
+                  ? 'bg-rose-500/5 border-rose-500/20 dark:border-rose-500/10' 
+                  : 'bg-zinc-100/60 dark:bg-zinc-900/60 border-zinc-200/80 dark:border-zinc-800/80'
+              }`}
+            >
+              <div
+                className={`text-xl sm:text-2xl font-black tracking-wider transition-all duration-300 ${
+                  isCrossed
+                    ? 'line-through text-rose-500/30 opacity-30 scale-90'
+                    : 'bg-gradient-to-b from-indigo-500 to-purple-600 bg-clip-text text-transparent'
+                }`}
+              >
+                {char}
+              </div>
+              {isCrossed && (
+                <motion.div
+                  initial={{ scale: 0, rotate: -45 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                >
+                  <span className="text-xs sm:text-sm font-black text-rose-500 drop-shadow-[0_1px_2px_rgba(244,63,94,0.1)]">❌</span>
+                </motion.div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Dynamic Board Grid */}
