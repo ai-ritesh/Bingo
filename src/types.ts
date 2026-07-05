@@ -7,6 +7,9 @@ export interface Player {
   board: string[]; // 25 shuffled or custom items
   markedIndices: number[]; // Indices 0-24 that have been marked/daubed by player
   boardSaved?: boolean; // Whether the player has explicitly saved their custom board
+  isVoiceJoined?: boolean; // Voice chat connection state
+  isMuted?: boolean; // Microphone mute state
+  isDeafened?: boolean; // Sound deafen state
 }
 
 export interface BoardCell {
@@ -62,6 +65,7 @@ export interface ServerToClientEvents {
   notification: (data: { type: 'info' | 'success' | 'warning' | 'error'; message: string }) => void;
   available_rooms: (rooms: { code: string; playerCount: number; gameStarted: boolean }[]) => void;
   chat_message: (message: ChatMessage) => void;
+  rtc_signal: (data: { senderId: string; signal: any }) => void;
 }
 
 export interface ClientToServerEvents {
@@ -79,4 +83,6 @@ export interface ClientToServerEvents {
   request_state: () => void;
   get_available_rooms: () => void;
   send_chat_message: (data: { text: string }) => void;
+  rtc_signal: (data: { targetId: string; signal: any }) => void;
+  toggle_voice_state: (data: { isVoiceJoined?: boolean; isMuted?: boolean; isDeafened?: boolean }) => void;
 }

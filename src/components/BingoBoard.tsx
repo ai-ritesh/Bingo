@@ -45,26 +45,32 @@ export default function BingoBoard({
     onSelectNumber(num);
   };
 
-  // Grid Header columns (B I N G O)
-  const headerLetters = ['B', 'I', 'N', 'G', 'O'];
+  // Grid Header columns (B I N G O or alphabetical grid header)
+  const headerLetters = board.length === 49 
+    ? ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+    : ['B', 'I', 'N', 'G', 'O'];
 
   return (
     <div id="bingo-board-wrapper" className="w-full max-w-lg mx-auto space-y-4 font-sans">
       {/* Letters Header */}
-      <div className="grid grid-cols-5 gap-2 text-center select-none px-2">
+      <div className={`grid gap-2 text-center select-none px-2 ${
+        board.length === 49 ? 'grid-cols-7' : 'grid-cols-5'
+      }`}>
         {headerLetters.map((char, index) => (
           <div
             key={index}
-            className="text-2xl sm:text-3xl font-extrabold tracking-wider bg-gradient-to-b from-indigo-500 to-purple-600 bg-clip-text text-transparent"
+            className="text-xl sm:text-2xl font-extrabold tracking-wider bg-gradient-to-b from-indigo-500 to-purple-600 bg-clip-text text-transparent"
           >
             {char}
           </div>
         ))}
       </div>
 
-      {/* 5x5 Board Grid */}
+      {/* Dynamic Board Grid */}
       <div className="bg-zinc-50 dark:bg-zinc-950 p-2.5 sm:p-4 rounded-3xl border border-zinc-200/80 dark:border-zinc-800/80 shadow-2xl aspect-square w-full">
-        <div className="grid grid-cols-5 gap-2 h-full w-full">
+        <div className={`grid gap-2 h-full w-full ${
+          board.length === 49 ? 'grid-cols-7' : 'grid-cols-5'
+        }`}>
           {board.map((item, idx) => {
             const isMarked = markedIndices.includes(idx);
             const isCalled = calledItems.includes(item);

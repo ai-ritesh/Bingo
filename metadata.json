@@ -1,6 +1,10 @@
 {
   "name": "Multiplayer Bingo",
-  "description": "A real-time multiplayer Bingo game where hosts can create rooms with custom words, numbers, or emojis, and participants play on randomly arranged synchronized boards.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "description": "A real-time multiplayer 1-25 Bingo game with modern built-in voice chat, turn-based mechanics, and real-time synchronized scoreboards.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

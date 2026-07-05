@@ -107,29 +107,62 @@ function isValidBoard(board: string[]): boolean {
   return true;
 }
 
-// Count completed horizontal, vertical, and diagonal lines (classic 1-25 Bingo rules)
+const ALPHABETICAL_ITEMS_49 = [
+  ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i)), // A-Z
+  ...Array.from({ length: 23 }, (_, i) => String(i + 1)) // 1-23
+];
+
+function isValidBoard49(board: string[]): boolean {
+  if (!board || board.length !== 49) return false;
+  const set = new Set(board.map((item) => item.trim()));
+  if (set.size !== 49) return false;
+  const poolSet = new Set(ALPHABETICAL_ITEMS_49);
+  for (const item of set) {
+    if (!poolSet.has(item)) return false;
+  }
+  return true;
+}
+
+// Count completed horizontal, vertical, and diagonal lines dynamically
 function countCompletedLines(player: Player): { count: number; completedLines: number[][] } {
   const marked = player.markedIndices || [];
   let count = 0;
   const completedLines: number[][] = [];
 
-  const linesToCheck = [
-    // Rows
-    [0, 1, 2, 3, 4],
-    [5, 6, 7, 8, 9],
-    [10, 11, 12, 13, 14],
-    [15, 16, 17, 18, 19],
-    [20, 21, 22, 23, 24],
-    // Columns
-    [0, 5, 10, 15, 20],
-    [1, 6, 11, 16, 21],
-    [2, 7, 12, 17, 22],
-    [3, 8, 13, 18, 23],
-    [4, 9, 14, 19, 24],
-    // Diagonals
-    [0, 6, 12, 18, 24],
-    [4, 8, 12, 16, 20]
-  ];
+  const boardSize = player.board.length === 49 ? 7 : 5;
+  const linesToCheck: number[][] = [];
+
+  // Rows
+  for (let r = 0; r < boardSize; r++) {
+    const row = [];
+    for (let c = 0; c < boardSize; c++) {
+      row.push(r * boardSize + c);
+    }
+    linesToCheck.push(row);
+  }
+
+  // Columns
+  for (let c = 0; c < boardSize; c++) {
+    const col = [];
+    for (let r = 0; r < boardSize; r++) {
+      col.push(r * boardSize + c);
+    }
+    linesToCheck.push(col);
+  }
+
+  // Main diagonal
+  const diag1 = [];
+  for (let i = 0; i < boardSize; i++) {
+    diag1.push(i * boardSize + i);
+  }
+  linesToCheck.push(diag1);
+
+  // Anti diagonal
+  const diag2 = [];
+  for (let i = 0; i < boardSize; i++) {
+    diag2.push(i * boardSize + (boardSize - 1 - i));
+  }
+  linesToCheck.push(diag2);
 
   linesToCheck.forEach((line) => {
     if (line.every((idx) => marked.includes(idx))) {
@@ -314,12 +347,13 @@ io.on('connection', (socket: Socket) => {
       return;
     }
 
-    if (items.length < 25) {
-      socket.emit('error_message', 'Exactly 25 items are required to start');
+    const len = items.length;
+    if (len !== 25 && len !== 49) {
+      socket.emit('error_message', 'Exactly 25 or 49 items are required to start');
       return;
     }
 
-    room.items = items.slice(0, 25);
+    room.items = items.slice(0, len);
     room.freeSpaceEnabled = freeSpaceEnabled;
     touchRoom(currentRoomCode);
 
@@ -335,12 +369,13 @@ io.on('connection', (socket: Socket) => {
     const player = room.players[currentPlayerId];
     if (!player) return;
 
-    if (items.length < 25) {
-      socket.emit('error_message', 'Exactly 25 items are required');
+    const len = items.length;
+    if (len !== 25 && len !== 49) {
+      socket.emit('error_message', 'Exactly 25 or 49 items are required');
       return;
     }
 
-    player.board = items.slice(0, 25);
+    player.board = items.slice(0, len);
     player.boardSaved = true;
     touchRoom(currentRoomCode);
 
@@ -406,12 +441,20 @@ io.on('connection', (socket: Socket) => {
     room.locked = true; // Lock room from new active participants
     room.freeSpaceEnabled = false; // Turn-based classic 1-25 has no free spaces
 
-    // Ensure all active players have a valid 1-25 board
+    // Ensure all active players have a valid board
     activePlayers.forEach((player) => {
       player.markedIndices = [];
-      if (!isValidBoard(player.board)) {
-        player.board = shuffle(DEFAULT_ITEMS);
-        player.boardSaved = true;
+      const isBoard49 = player.board.length === 49;
+      if (isBoard49) {
+        if (!isValidBoard49(player.board)) {
+          player.board = shuffle(ALPHABETICAL_ITEMS_49);
+          player.boardSaved = true;
+        }
+      } else {
+        if (!isValidBoard(player.board)) {
+          player.board = shuffle(DEFAULT_ITEMS);
+          player.boardSaved = true;
+        }
       }
     });
 
@@ -460,10 +503,20 @@ io.on('connection', (socket: Socket) => {
       return;
     }
 
-    const numVal = parseInt(trimmedNum, 10);
-    if (isNaN(numVal) || numVal < 1 || numVal > 25) {
-      socket.emit('error_message', 'Only numbers 1 to 25 can be selected.');
-      return;
+    // Validate item selection depending on board size
+    const isBoard49 = Object.values(room.players).some((p) => p.board.length === 49);
+    if (isBoard49) {
+      const allowedSet = new Set(ALPHABETICAL_ITEMS_49);
+      if (!allowedSet.has(trimmedNum)) {
+        socket.emit('error_message', 'Invalid alphabetical or numerical value.');
+        return;
+      }
+    } else {
+      const numVal = parseInt(trimmedNum, 10);
+      if (isNaN(numVal) || numVal < 1 || numVal > 25) {
+        socket.emit('error_message', 'Only numbers 1 to 25 can be selected.');
+        return;
+      }
     }
 
     // Register selection on the server
@@ -576,6 +629,31 @@ io.on('connection', (socket: Socket) => {
     handleUserExit();
   });
 
+  socket.on('rtc_signal', ({ targetId, signal }: { targetId: string; signal: any }) => {
+    if (!currentRoomCode || !currentPlayerId) return;
+    // Relay WebRTC signal directly to target player
+    io.to(targetId).emit('rtc_signal', {
+      senderId: currentPlayerId,
+      signal
+    });
+  });
+
+  socket.on('toggle_voice_state', ({ isVoiceJoined, isMuted, isDeafened }: { isVoiceJoined?: boolean; isMuted?: boolean; isDeafened?: boolean }) => {
+    if (!currentRoomCode || !currentPlayerId) return;
+    const room = rooms[currentRoomCode];
+    if (!room) return;
+
+    const player = room.players[currentPlayerId];
+    if (!player) return;
+
+    if (isVoiceJoined !== undefined) player.isVoiceJoined = isVoiceJoined;
+    if (isMuted !== undefined) player.isMuted = isMuted;
+    if (isDeafened !== undefined) player.isDeafened = isDeafened;
+
+    touchRoom(currentRoomCode);
+    io.to(currentRoomCode).emit('room_state', room);
+  });
+
   socket.on('disconnect', () => {
     console.log(`Socket disconnected: ${socket.id}`);
     handleUserExit(true); // isDisconnect
@@ -601,6 +679,7 @@ io.on('connection', (socket: Socket) => {
     if (isDisconnect) {
       // Mark as disconnected to allow reconnection
       player.isConnected = false;
+      player.isVoiceJoined = false;
       io.to(currentRoomCode).emit('room_state', room);
       broadcastAvailableRooms();
       io.to(currentRoomCode).emit('notification', { type: 'info', message: `${player.name} lost connection` });

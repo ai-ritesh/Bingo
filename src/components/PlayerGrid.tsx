@@ -11,27 +11,44 @@ interface PlayerGridProps {
 }
 
 function countCompletedLines(board: string[], markedIndices: number[]): number {
-  if (!board || board.length !== 25) return 0;
+  if (!board || (board.length !== 25 && board.length !== 49)) return 0;
   const marked = markedIndices || [];
   let count = 0;
 
-  const linesToCheck = [
-    // Rows
-    [0, 1, 2, 3, 4],
-    [5, 6, 7, 8, 9],
-    [10, 11, 12, 13, 14],
-    [15, 16, 17, 18, 19],
-    [20, 21, 22, 23, 24],
-    // Columns
-    [0, 5, 10, 15, 20],
-    [1, 6, 11, 16, 21],
-    [2, 7, 12, 17, 22],
-    [3, 8, 13, 18, 23],
-    [4, 9, 14, 19, 24],
-    // Diagonals
-    [0, 6, 12, 18, 24],
-    [4, 8, 12, 16, 20]
-  ];
+  const boardSize = board.length === 49 ? 7 : 5;
+  const linesToCheck: number[][] = [];
+
+  // Rows
+  for (let r = 0; r < boardSize; r++) {
+    const row = [];
+    for (let c = 0; c < boardSize; c++) {
+      row.push(r * boardSize + c);
+    }
+    linesToCheck.push(row);
+  }
+
+  // Columns
+  for (let c = 0; c < boardSize; c++) {
+    const col = [];
+    for (let r = 0; r < boardSize; r++) {
+      col.push(r * boardSize + c);
+    }
+    linesToCheck.push(col);
+  }
+
+  // Main diagonal
+  const diag1 = [];
+  for (let i = 0; i < boardSize; i++) {
+    diag1.push(i * boardSize + i);
+  }
+  linesToCheck.push(diag1);
+
+  // Anti diagonal
+  const diag2 = [];
+  for (let i = 0; i < boardSize; i++) {
+    diag2.push(i * boardSize + (boardSize - 1 - i));
+  }
+  linesToCheck.push(diag2);
 
   linesToCheck.forEach((line) => {
     if (line.every((idx) => marked.includes(idx))) {

@@ -27,6 +27,7 @@ import LiveChat from './components/LiveChat';
 import PlayerGrid from './components/PlayerGrid';
 import BingoBoard from './components/BingoBoard';
 import CalledHistory from './components/CalledHistory';
+import VoiceChat from './components/VoiceChat';
 
 // Initialize the socket client
 // By omitting the URL, Socket.IO client automatically connects to the host serving the page.
@@ -461,18 +462,26 @@ export default function App() {
                 </div>
 
                 {/* Player Roster Section */}
-                <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-lg h-fit space-y-4">
-                  <h3 className="text-sm font-bold text-zinc-900 dark:text-white border-b border-zinc-200 dark:border-zinc-800 pb-2">
-                    Lobby Connection Panel
-                  </h3>
-                  <PlayerGrid
-                    players={roomState.players}
-                    hostId={roomState.hostId}
+                <div className="space-y-6">
+                  <VoiceChat
+                    socket={socket}
+                    roomState={roomState}
                     currentPlayerId={currentPlayerId || ''}
-                    onKickPlayer={handleKickPlayer}
-                    winnerId={roomState.winnerId}
-                    gameStarted={roomState.gameStarted}
                   />
+                  
+                  <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-lg h-fit space-y-4">
+                    <h3 className="text-sm font-bold text-zinc-900 dark:text-white border-b border-zinc-200 dark:border-zinc-800 pb-2">
+                      Lobby Connection Panel
+                    </h3>
+                    <PlayerGrid
+                      players={roomState.players}
+                      hostId={roomState.hostId}
+                      currentPlayerId={currentPlayerId || ''}
+                      onKickPlayer={handleKickPlayer}
+                      winnerId={roomState.winnerId}
+                      gameStarted={roomState.gameStarted}
+                    />
+                  </div>
                 </div>
               </div>
             ) : (
@@ -546,6 +555,12 @@ export default function App() {
 
                 {/* Column 2: Draw HUD ball & players log */}
                 <div className="lg:col-span-4 space-y-6">
+                  
+                  <VoiceChat
+                    socket={socket}
+                    roomState={roomState}
+                    currentPlayerId={currentPlayerId || ''}
+                  />
                   
                   {/* Ball caller HUD */}
                   <CalledHistory
