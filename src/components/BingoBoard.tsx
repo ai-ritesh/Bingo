@@ -183,7 +183,7 @@ export default function BingoBoard({
           {completedLines.length > 0 && (
             <svg className="absolute inset-0 w-full h-full pointer-events-none z-20" viewBox="0 0 100 100">
               <defs>
-                <filter id="mild-blur" x="-20%" y="-20%" width="140%" height="140%">
+                <filter id="mild-blur" filterUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
                   <feGaussianBlur stdDeviation="1.0" result="blur" />
                   <feMerge>
                     <feMergeNode in="blur" />
@@ -229,7 +229,9 @@ export default function BingoBoard({
                       y1={y1}
                       x2={x2}
                       y2={y2}
-                      className="stroke-indigo-500/60 dark:stroke-indigo-400/60"
+                      stroke="currentColor"
+                      strokeOpacity="0.6"
+                      className="text-indigo-500 dark:text-indigo-400"
                       strokeWidth="3.5"
                       strokeLinecap="round"
                       filter="url(#mild-blur)"
