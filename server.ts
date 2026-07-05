@@ -543,7 +543,9 @@ io.on('connection', (socket: Socket) => {
       const p1 = activePlayers[0];
       const p2 = activePlayers[1];
 
-      const targetLines = p1.board.length === 49 ? 7 : 5;
+      // Determine target lines based on board size
+      const boardSize = p1.board.length === 49 ? 7 : 5;
+      const targetLines = boardSize; // 7 for 7x7, 5 for 5x5
 
       const score1 = countCompletedLines(p1).count;
       const score2 = countCompletedLines(p2).count;
